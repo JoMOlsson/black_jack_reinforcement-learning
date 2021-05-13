@@ -12,14 +12,22 @@ class Dealer:
         self.deck_count = 0
 
     def get_new_stack(self):
+        """ Will return a stack of cards according to the number of decks specified in the self.number_of_decks
+        variable
+
+        :return stack (list): Cards stack
+        """
         stack = []
         for _ in range(0, self.number_of_decks):
             for card in range(1, 14):
-                # Add one card per card-denomination
-                stack.extend([card]*4)
+                stack.extend([card]*4)  # Add one card per card-denomination
         return stack
 
     def shuffle(self):
+        """ Fetches a new stack of card and shuffles the stack. The method also resets the deck count.
+
+        :return stack (list): Cards stack
+        """
         stack = Dealer.get_new_stack(self)
         random.shuffle(stack)
         self.deck_count = 0
@@ -27,6 +35,12 @@ class Dealer:
 
     @staticmethod
     def card_count(cards):
+        """ Given a list of cards the method will calculate the card-count
+
+        :param cards: (list) List of cards
+        :return count, usable_ace: (int, int) maximum card-count, usable ace exist
+        """
+        # TODO: Check the logic of this stage, do we only sum ace once
         cards = [card if card not in [11, 12, 13] else 10 for card in cards]
         sum1 = sum(cards)
 
@@ -46,6 +60,10 @@ class Dealer:
         return count, usable_ace
 
     def draw_card(self):
+        """ Draws the next card in the stack and updates the deck-count
+
+        :return card: (int) drawn card
+        """
         card = self.stack[0]
 
         # Update the deck count
@@ -59,6 +77,11 @@ class Dealer:
         return card
 
     def new_game(self):
+        """ Sets up a new game of black jack. If the number of remaining cards in the stack is lower than the
+        minimum accepted card limit, a new shuffled stack is returned.
+
+        :return player_cards, player_count, dealer_cards, dealer_count, playable_ace_p: (list, int, list, int, int)
+        """
         player_cards = []
         dealer_cards = []
 
