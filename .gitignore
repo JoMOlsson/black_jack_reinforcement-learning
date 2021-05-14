@@ -1,0 +1,5 @@
+*.png
+*venv/
+*.idea/
+*__pycache__/
+*dump/
