@@ -4,4 +4,7 @@ The Black-Jack reinforcement learning project solves the game of black-jack trai
 
 ![rendered_network](/assets/q_surface.gif)
 
-The animation above shows the resulting Q-surface post the training session for different deck-counts ranging from -20 to 20. 
+The animation above shows the resulting Q-surface post the training session for different deck-counts ranging from -20 to 20. Below is an animation showing the forming of the q-surface during the training of the Q-agent.
+
+![rendered_network](/assets/q_surface_training.gif)
+
