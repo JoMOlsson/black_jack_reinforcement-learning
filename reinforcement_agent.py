@@ -110,6 +110,17 @@ class Agent:
             mov_average[i] = avg
         return mov_average
 
+    def extract_state_string(self, player_count, dealer_count, player_cards, playable_ace_p):
+        # Get state variables
+        player_count_tag = self.dealer.construct_count_tag(player_count)
+        dealer_count_tag = self.dealer.construct_count_tag(dealer_count)
+        dd_possible = self.dealer.double_down_possible(player_cards)
+        if self.COUNT_CARDS:
+            state = f"{player_count_tag}_{playable_ace_p}_{dd_possible}_{dealer_count_tag}_{self.dealer.deck_count}"
+        else:
+            state = f"{player_count_tag}_{playable_ace_p}_{dd_possible}_{dealer_count_tag}"
+        return state
+
     def train_agent(self, num_of_episodes=1000000, azim_start=0, extract_performance_every=np.inf):
         """
         States: - Player cards
@@ -123,7 +134,6 @@ class Agent:
         :param extract_performance_every:
         :return:
         """
-        # TODO: Refactor state extraction
         # TODO: Clean Code
         win_loss_ratio_list = []                     # List holding the win/loss ratio values
         azim = azim_start                            # Azim angle start, used for performance visualisation
@@ -139,28 +149,20 @@ class Agent:
             n += 1
             performance_count += 1
             if n >= print_tick_lim:
+                print(f"Executed another {print_tick_lim} episodes, total episode count {print_tick}")
                 print_tick += n
                 n = 0
-                print("Executed another %d episodes, total episode count %d" % (print_tick_lim, print_tick))
-
+            # Start new game
             player_cards, player_count, dealer_cards, dealer_count, playable_ace_p = self.dealer.new_game()
-
-            player_count_tag = self.dealer.construct_count_tag(player_count)
-            dealer_count_tag = self.dealer.construct_count_tag(dealer_count)
-            dd_possible = self.dealer.double_down_possible(player_cards)
-            if self.COUNT_CARDS:
-                state = f"{player_count_tag}_{playable_ace_p}_{dd_possible}_{dealer_count_tag}_{self.dealer.deck_count}"
-            else:
-                state = f"{player_count_tag}_{playable_ace_p}_{dd_possible}_{dealer_count_tag}"
+            state = self.extract_state_string(player_count, dealer_count, player_cards, playable_ace_p)
 
             # Add state to Q-table
             if state not in q:
                 q[state] = [0, 0, 0]
-
             q_vals = q[state]
             action = np.argmax(q_vals)
 
-            # Epsilon greedy
+            # Change action with an Epsilon greedy policy
             if i_episode < explore_stop:
                 action = self.change_action(action, self.exploration_prob, q_vals)
 
@@ -168,13 +170,10 @@ class Agent:
             if self.dealer.has_black_jack(player_cards, player_count):
                 # Black Jack
                 action = 0
-                # Take action
                 reward, player_cards, player_count, dealer_cards, dealer_count, playable_ace_p, game_over = \
                     self.dealer.take_action(action, player_cards, dealer_cards)
-
                 q_new_state = [reward, reward, reward]
-                q[state][action] = q[state][action] + self.alpha * (reward + self.discount * max(q_new_state)
-                                                                    - q[state][action])
+                q[state][action] += self.alpha * (reward + self.discount * max(q_new_state) - q[state][action])
             else:
                 game_over = False
 
@@ -183,14 +182,7 @@ class Agent:
                 # Take action
                 reward, player_cards, player_count, dealer_cards, dealer_count, playable_ace_p, game_over = \
                     self.dealer.take_action(action, player_cards, dealer_cards)
-                player_count_tag = self.dealer.construct_count_tag(player_count)
-                dealer_count_tag = self.dealer.construct_count_tag(dealer_count)
-                dd_possible = self.dealer.double_down_possible(player_cards)
-                if self.COUNT_CARDS:
-                    new_state = f"{player_count_tag}_{playable_ace_p}_{dd_possible}_{dealer_count_tag}" \
-                                f"_{self.dealer.deck_count}"
-                else:
-                    new_state = f"{player_count_tag}_{playable_ace_p}_{dd_possible}_{dealer_count_tag}"
+                new_state = self.extract_state_string(player_count, dealer_count, player_cards, playable_ace_p)
 
                 if game_over:
                     q_new_state = [reward, reward, reward]
@@ -398,18 +390,11 @@ class Agent:
         win_list = [0] * number_of_episodes
         for i in range(0, number_of_episodes):
             player_cards, player_count, dealer_cards, dealer_count, playable_ace_p = self.dealer.new_game()
-            player_count_tag = self.dealer.construct_count_tag(player_count)
-            dealer_count_tag = self.dealer.construct_count_tag(dealer_count)
-            dd_possible = self.dealer.double_down_possible(player_cards)
-            if self.COUNT_CARDS:
-                state = f"{player_count_tag}_{playable_ace_p}_{dd_possible}_{dealer_count_tag}_{self.dealer.deck_count}"
-            else:
-                state = f"{player_count_tag}_{playable_ace_p}_{dd_possible}_{dealer_count_tag}"
+            state = self.extract_state_string(player_count, dealer_count, player_cards, playable_ace_p)
 
             # Add state to Q-table
             if state not in self.q:
                 self.q[state] = [0, 0, 0]
-
             q_vals = np.array(self.q[state])
             action = np.argmax(q_vals)
 
@@ -422,13 +407,7 @@ class Agent:
                 # Take action
                 reward, player_cards, player_count, dealer_cards, dealer_count, playable_ace_p, game_over = \
                     self.dealer.take_action(action, player_cards, dealer_cards)
-                player_count_tag = self.dealer.construct_count_tag(player_count)
-                dealer_count_tag = self.dealer.construct_count_tag(dealer_count)
-                dd_possible = self.dealer.double_down_possible(player_cards)
-                if self.COUNT_CARDS:
-                    new_state = f"{player_count_tag}_{playable_ace_p}_{dd_possible}_{dealer_count_tag}_{self.dealer.deck_count}"
-                else:
-                    new_state = f"{player_count_tag}_{playable_ace_p}_{dd_possible}_{dealer_count_tag}"
+                new_state = self.extract_state_string(player_count, dealer_count, player_cards, playable_ace_p)
 
                 if game_over:
                     q_new_state = [reward, reward, reward]
@@ -461,17 +440,10 @@ class Agent:
             print("===== Running with policy: " + policy[iPolicy] + " =====")
             for i in range(0, num_of_eval_episodes):
                 player_cards, player_count, dealer_cards, dealer_count, playable_ace_p = self.dealer.new_game()
-                player_count_tag = self.dealer.construct_count_tag(player_count)
-                dealer_count_tag = self.dealer.construct_count_tag(dealer_count)
-                dd_possible = self.dealer.double_down_possible(player_cards)
+                state = self.extract_state_string(player_count, dealer_count, player_cards, playable_ace_p)
+
                 if self.dealer.has_black_jack(player_cards, player_count):
                     num_of_black_jack += 1
-
-                if self.COUNT_CARDS:
-                    state = f"{player_count_tag}_{playable_ace_p}_{dd_possible}_{dealer_count_tag}" \
-                            f"_{self.dealer.deck_count}"
-                else:
-                    state = f"{player_count_tag}_{playable_ace_p}_{dd_possible}_{dealer_count_tag}"
 
                 # Add state to Q-table
                 if state not in self.q:
@@ -498,14 +470,7 @@ class Agent:
                     # Take action
                     reward, player_cards, player_count, dealer_cards, dealer_count, playable_ace_p, game_over = \
                         self.dealer.take_action(action, player_cards, dealer_cards)
-                    player_count_tag = self.dealer.construct_count_tag(player_count)
-                    dealer_count_tag = self.dealer.construct_count_tag(dealer_count)
-                    dd_possible = self.dealer.double_down_possible(player_cards)
-                    if self.COUNT_CARDS:
-                        new_state = f"{player_count_tag}_{playable_ace_p}_{dd_possible}_{dealer_count_tag}" \
-                                    f"_{self.dealer.deck_count}"
-                    else:
-                        new_state = f"{player_count_tag}_{playable_ace_p}_{dd_possible}_{dealer_count_tag}"
+                    new_state = self.extract_state_string(player_count, dealer_count, player_cards, playable_ace_p)
 
                     if game_over:
                         q_new_state = np.array([reward, reward, reward])
@@ -561,5 +526,5 @@ class Agent:
             print(f"Number of draw: {len(draw)} , {r_draw}")
             print(f"Number of lost games: {len(loose)} , {r_loose}")
             print(f"Number of black jacks : {len(black_jack)} , {r_black_jack}")
-            print(f"Number of postive/negative double down: {len(dd_win)} / {len(dd_loose)} , {r_dd}")
+            print(f"Number of postive / negative double down: {len(dd_win)} / {len(dd_loose)} , {r_dd}")
             print(f"The win factor is: {win_factor}")
