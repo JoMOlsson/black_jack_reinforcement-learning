@@ -112,11 +112,17 @@ class Dealer:
 
     @staticmethod
     def has_black_jack(player_cards: list, player_count: list):
+        """ Checks if black-jack is achieved
+
+        :param player_cards: (list) List of cards
+        :param player_count: (list) Player count
+        :return:
+        """
         return len(player_cards) == 2 and 21 in player_count
 
     @staticmethod
     def double_down_possible(cards):
-        """ Check if double down action is possible. Double down is possible if the number of cards is 2.
+        """ Check if double down action is possible. Double down is possible if the number of player cards is 2.
 
         :param cards: (list)
         :return:
@@ -179,7 +185,7 @@ class Dealer:
         """
         game_over = False
         if action == 0:
-            # Stand
+            # ---- Stand ----
             game_over = True
             dealer_count, dealer_cards = Dealer.dealer_play(self, dealer_cards)  # play dealer
             player_count, playable_ace_p = Dealer.card_count(player_cards)       # Receive card-count
@@ -188,7 +194,7 @@ class Dealer:
             if self.has_black_jack(player_cards, player_count):
                 reward = 1
         elif action == 1:
-            # hit
+            # ---- Hit ----
             player_cards.append(Dealer.draw_card(self))                          # Draw cards
             player_count, playable_ace_p = Dealer.card_count(player_cards)       # Receive card-count
             if not len(player_count):                                            # Player got fat
@@ -198,8 +204,7 @@ class Dealer:
                 reward = 0
             dealer_count, dealer_ace = Dealer.card_count(dealer_cards)
         elif action == 2:
-            # Double down
-            game_over = True
+            # ---- Double down ----
             if self.double_down_possible(player_cards):
                 player_cards.append(Dealer.draw_card(self))                          # Draw card
                 player_count, playable_ace_p = Dealer.card_count(player_cards)       # Receive card-count
@@ -207,11 +212,10 @@ class Dealer:
                 outcome = Dealer.check_outcome(player_count, dealer_count)           # Calculate outcome
                 reward = 2 * outcome
             else:
-                # Action not allowed
-                reward = -10
-                player_count, playable_ace_p = Dealer.card_count(player_cards)
+                reward = -10  # Action not allowed
+                player_count, playable_ace_p = Dealer.card_count(player_cards)       # Receive card-count
                 dealer_count, _ = Dealer.card_count(dealer_cards)
-
+            game_over = True
         return reward, player_cards, player_count, dealer_cards, dealer_count, playable_ace_p, game_over
 
     def play_manual(self, num_of_games: int = 1):
@@ -221,6 +225,7 @@ class Dealer:
         :param num_of_games: (int)
         :return:
         """
+        # TODO: Support additional actions
         for i in range(0, num_of_games):
             print("----- NEW GAME -----")
             player_cards, player_count, dealer_cards, dealer_count, playable_ace_p = Dealer.new_game(self)
