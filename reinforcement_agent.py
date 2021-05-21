@@ -96,20 +96,6 @@ class Agent:
             state_vectors['deck_count'] = deck_count
         return state_vectors
 
-    @staticmethod
-    def moving_average(data, window):
-        n = math.ceil(len(data) / window)
-        mov_average = [0] * n
-
-        for i in range(0, n):
-            if i == n - 1:
-                avg = sum(data[window * i:]) / len(data[window * i:])
-            else:
-                d = data[window * i:window * (i + 1) - 1]
-                avg = sum(d) / len(d)
-            mov_average[i] = avg
-        return mov_average
-
     def extract_state_string(self, player_count, dealer_count, player_cards, playable_ace_p):
         # Get state variables
         player_count_tag = self.dealer.construct_count_tag(player_count)
