@@ -6,7 +6,6 @@ import re
 import json
 import os
 import datetime
-import time
 
 from dealer import Dealer
 
@@ -26,21 +25,38 @@ class Agent:
             self.q = {}
 
     @staticmethod
-    def change_action(action, p):
+    def change_action(action, p, q_values):
+        """ Used to implement an epsilon greedy policy. Given an action the method will change the
+        action with a given probability specified by the provided probability value [0-1]. If the action is changed,
+        it will be changed to any valid action given by the provided set of q-values. Q-values of value -10 are
+        interpreted as a banned action.
+
+        :param action: (int) Action value
+        :param p: (float) Probability value between [0-1] determining the rate of action change
+        :param q_values: (list) List of possible actions
+        :return action: (int)
+        """
         rand_val = random.uniform(0, 1)
-        action = action if rand_val > p else abs(action - 1)
+        change_action = rand_val < p
+
+        if change_action:
+            valid_actions = np.arange(0, len(q_values), 1)
+            additional_actions = np.delete(valid_actions, np.where(valid_actions == action))  # Remove given action
+            additional_actions = np.delete(additional_actions, np.where(additional_actions == -10))  # Remove invl act
+            action = int(additional_actions[random.randint(0, len(additional_actions)-1)])
         return action
 
     @staticmethod
     def extract_state_vectors(q):
-        player_count = []
-        playable_ace = []
-        dealer_count = []
-        deck_count = []
-        action = []
-        max_q_val = []
+        player_count = []  # List storing player counts
+        playable_ace = []  # List storing usable ave
+        dd_possible = []   # Double down possible
+        dealer_count = []  # Dealer count
+        deck_count = []    # Deck count
+        action = []        # Storage for actions
+        max_q_val = []     # Storing max_q_vals
 
-        state_vectors = {}
+        state_vectors = {}  # Dictionary storing state variables
         for state in q:
             q_vals = np.array(q[state])
             action.append(np.argmax(q_vals))
@@ -58,7 +74,9 @@ class Agent:
                 elif i == 1:
                     playable_ace.append(int(state[delim_index[i - 1] + 1:delim]))
                 elif i == 2:
-                    if num_of_vars == 3:
+                    dd_possible.append(int(state[delim_index[i - 1] + 1:delim]))
+                elif i == 3:
+                    if num_of_vars == 4:
                         dc = state[delim_index[i - 1] + 1:len(state)]
                     else:
                         dc = state[delim_index[i - 1] + 1:delim]
@@ -67,15 +85,15 @@ class Agent:
                     dealer_count.append(int(dc))
                 else:
                     deck_count.append(int(state[delim_index[i - 1] + 1:len(state)]))
-
+        # Adding state vectors
         state_vectors['player_count'] = player_count
         state_vectors['playable_ace'] = playable_ace
         state_vectors['dealer_count'] = dealer_count
         state_vectors['action'] = action
         state_vectors['max_q_val'] = max_q_val
+        state_vectors['dd_possible'] = dd_possible
         if deck_count:
             state_vectors['deck_count'] = deck_count
-
         return state_vectors
 
     @staticmethod
@@ -93,7 +111,21 @@ class Agent:
         return mov_average
 
     def train_agent(self, num_of_episodes=1000000, azim_start=0, extract_performance_every=np.inf):
-        win_loss_ratio_list = []
+        """
+        States: - Player cards
+                - Playable ace
+                - Double down possible
+                - Dealer count
+                - Deck count
+
+        :param num_of_episodes:
+        :param azim_start:
+        :param extract_performance_every:
+        :return:
+        """
+        # TODO: Refactor state extraction
+        # TODO: Clean Code
+        win_loss_ratio_list = []                     # List holding the win/loss ratio values
         azim = azim_start                            # Azim angle start, used for performance visualisation
         q = self.q                                   # Get Q-table
         explore_stop = round(num_of_episodes * 0.8)  # Stop exploration after 80% of training
@@ -115,23 +147,37 @@ class Agent:
 
             player_count_tag = self.dealer.construct_count_tag(player_count)
             dealer_count_tag = self.dealer.construct_count_tag(dealer_count)
+            dd_possible = self.dealer.double_down_possible(player_cards)
             if self.COUNT_CARDS:
-                state = f"{player_count_tag}_{playable_ace_p}_{dealer_count_tag}_{self.dealer.deck_count}"
+                state = f"{player_count_tag}_{playable_ace_p}_{dd_possible}_{dealer_count_tag}_{self.dealer.deck_count}"
             else:
-                state = f"{player_count_tag}_{playable_ace_p}_{dealer_count_tag}"
+                state = f"{player_count_tag}_{playable_ace_p}_{dd_possible}_{dealer_count_tag}"
 
             # Add state to Q-table
             if state not in q:
-                q[state] = [0, 0]
+                q[state] = [0, 0, 0]
 
-            q_vals = np.array(q[state])
+            q_vals = q[state]
             action = np.argmax(q_vals)
 
             # Epsilon greedy
             if i_episode < explore_stop:
-                action = self.change_action(action, self.exploration_prob)
+                action = self.change_action(action, self.exploration_prob, q_vals)
 
-            game_over = False
+            # Check if black-jack
+            if self.dealer.has_black_jack(player_cards, player_count):
+                # Black Jack
+                action = 0
+                # Take action
+                reward, player_cards, player_count, dealer_cards, dealer_count, playable_ace_p, game_over = \
+                    self.dealer.take_action(action, player_cards, dealer_cards)
+
+                q_new_state = [reward, reward, reward]
+                q[state][action] = q[state][action] + self.alpha * (reward + self.discount * max(q_new_state)
+                                                                    - q[state][action])
+            else:
+                game_over = False
+
             reward = 0
             while not game_over:
                 # Take action
@@ -139,29 +185,34 @@ class Agent:
                     self.dealer.take_action(action, player_cards, dealer_cards)
                 player_count_tag = self.dealer.construct_count_tag(player_count)
                 dealer_count_tag = self.dealer.construct_count_tag(dealer_count)
+                dd_possible = self.dealer.double_down_possible(player_cards)
                 if self.COUNT_CARDS:
-                    new_state = f"{player_count_tag}_{playable_ace_p}_{dealer_count_tag}_{self.dealer.deck_count}"
+                    new_state = f"{player_count_tag}_{playable_ace_p}_{dd_possible}_{dealer_count_tag}" \
+                                f"_{self.dealer.deck_count}"
                 else:
-                    new_state = f"{player_count_tag}_{playable_ace_p}_{dealer_count_tag}"
+                    new_state = f"{player_count_tag}_{playable_ace_p}_{dd_possible}_{dealer_count_tag}"
 
                 if game_over:
-                    q_new_state = [reward, reward]
+                    q_new_state = [reward, reward, reward]
                 else:
                     if new_state not in self.q:
-                        q_new_state = [0, 0]
+                        q_new_state = [0, 0, 0]
                         q[new_state] = q_new_state
                     else:
                         q_new_state = q[new_state]
 
-                q[state][action] = q[state][action] + self.alpha * (reward + self.discount * max(q_new_state)
-                                                                    - q[state][action])
+                q[state][action] += self.alpha * (reward + self.discount * max(q_new_state) - q[state][action])
+
                 # Move to new state
-                state = new_state
-                q_vals = np.array(q_new_state)
-                action = np.argmax(q_vals)
-                if i_episode < explore_stop:
-                    action = self.change_action(action, self.exploration_prob)
+                if not game_over:
+                    state = new_state
+                    q_vals = np.array(q_new_state)
+                    action = np.argmax(q_vals)
+                    if i_episode < explore_stop:
+                        action = self.change_action(action, self.exploration_prob, q_vals)
             outcome_list[i_episode] = reward
+
+            # Evaluate performance
             if performance_count > extract_performance_every:
                 self.q = q             # Assign q-table
                 performance_count = 0  # re-initialize counter
@@ -175,8 +226,8 @@ class Agent:
             json.dump(q, outfile)
         self.q = q
 
-        self.visualize_action_surface()
         self.evaluate_performance()
+        self.visualize_action_surface()
         return q
 
     @staticmethod
@@ -250,8 +301,8 @@ class Agent:
                 mng.window.state('zoomed')
                 ax.set_zlim([-1, 1])
 
+                basename = 'action_surface_' if show_actions else 'q_surface_'
                 if not rotation:
-                    basename = 'action_surface_' if show_actions else 'q_surface_'
                     plt.savefig(basename + str(n_image) + '.png')
                     n_image += 1
                     ax.view_init(elev=25, azim=azim)
@@ -303,8 +354,8 @@ class Agent:
                     else:
                         hit_stay[idx_pcount][idx_dcount] = 0
         # ---- Visualize grid ----
-
         if not include_evaluation_plot:
+            x, y = np.meshgrid(dealer_count_unique, player_count_unique)
             axs = plt.axes(projection="3d")
             axs.plot_surface(x, y, hit_stay, rstride=1, cstride=1, cmap='winter', edgecolor='none')
             axs.set_zlim(-1, 1)
@@ -349,34 +400,40 @@ class Agent:
             player_cards, player_count, dealer_cards, dealer_count, playable_ace_p = self.dealer.new_game()
             player_count_tag = self.dealer.construct_count_tag(player_count)
             dealer_count_tag = self.dealer.construct_count_tag(dealer_count)
-
+            dd_possible = self.dealer.double_down_possible(player_cards)
             if self.COUNT_CARDS:
-                state = f"{player_count_tag}_{playable_ace_p}_{dealer_count_tag}_{self.dealer.deck_count}"
+                state = f"{player_count_tag}_{playable_ace_p}_{dd_possible}_{dealer_count_tag}_{self.dealer.deck_count}"
             else:
-                state = f"{player_count_tag}_{playable_ace_p}_{dealer_count_tag}"
+                state = f"{player_count_tag}_{playable_ace_p}_{dd_possible}_{dealer_count_tag}"
 
             # Add state to Q-table
             if state not in self.q:
-                self.q[state] = [0, 0]
+                self.q[state] = [0, 0, 0]
+
             q_vals = np.array(self.q[state])
             action = np.argmax(q_vals)
 
-            game_over = False
+            if self.dealer.has_black_jack(player_cards, player_count):
+                game_over = True
+                reward = 1.5
+            else:
+                game_over = False
             while not game_over:
                 # Take action
                 reward, player_cards, player_count, dealer_cards, dealer_count, playable_ace_p, game_over = \
                     self.dealer.take_action(action, player_cards, dealer_cards)
                 player_count_tag = self.dealer.construct_count_tag(player_count)
                 dealer_count_tag = self.dealer.construct_count_tag(dealer_count)
+                dd_possible = self.dealer.double_down_possible(player_cards)
                 if self.COUNT_CARDS:
-                    new_state = f"{player_count_tag}_{playable_ace_p}_{dealer_count_tag}_{self.dealer.deck_count}"
+                    new_state = f"{player_count_tag}_{playable_ace_p}_{dd_possible}_{dealer_count_tag}_{self.dealer.deck_count}"
                 else:
-                    new_state = f"{player_count_tag}_{playable_ace_p}_{dealer_count_tag}"
+                    new_state = f"{player_count_tag}_{playable_ace_p}_{dd_possible}_{dealer_count_tag}"
 
                 if game_over:
-                    q_new_state = [reward, reward]
+                    q_new_state = [reward, reward, reward]
                 elif new_state not in self.q:
-                    q_new_state = [0, 0]
+                    q_new_state = [0, 0, 0]
                     self.q[new_state] = q_new_state
                 else:
                     q_new_state = self.q[new_state]
@@ -406,18 +463,20 @@ class Agent:
                 player_cards, player_count, dealer_cards, dealer_count, playable_ace_p = self.dealer.new_game()
                 player_count_tag = self.dealer.construct_count_tag(player_count)
                 dealer_count_tag = self.dealer.construct_count_tag(dealer_count)
+                dd_possible = self.dealer.double_down_possible(player_cards)
                 if self.dealer.has_black_jack(player_cards, player_count):
                     num_of_black_jack += 1
 
                 if self.COUNT_CARDS:
-                    state = f"{player_count_tag}_{playable_ace_p}_{dealer_count_tag}_{self.dealer.deck_count}"
+                    state = f"{player_count_tag}_{playable_ace_p}_{dd_possible}_{dealer_count_tag}" \
+                            f"_{self.dealer.deck_count}"
                 else:
-                    state = f"{player_count_tag}_{playable_ace_p}_{dealer_count_tag}"
+                    state = f"{player_count_tag}_{playable_ace_p}_{dd_possible}_{dealer_count_tag}"
 
                 # Add state to Q-table
                 if state not in self.q:
                     unexplored_states += 1
-                    self.q[state] = [0, 0]
+                    self.q[state] = [0, 0, 0]
                 q_vals = np.array(self.q[state])
                 action = np.argmax(q_vals)
 
@@ -429,25 +488,29 @@ class Agent:
                         action = 0
                 elif policy[iPolicy] == 'random':
                     action = random.randint(0, 1)
-                else:
-                    pass
 
-                game_over = False
+                if self.dealer.has_black_jack(player_cards, player_count):
+                    game_over = True
+                    reward = 1.5
+                else:
+                    game_over = False
                 while not game_over:
                     # Take action
                     reward, player_cards, player_count, dealer_cards, dealer_count, playable_ace_p, game_over = \
                         self.dealer.take_action(action, player_cards, dealer_cards)
                     player_count_tag = self.dealer.construct_count_tag(player_count)
                     dealer_count_tag = self.dealer.construct_count_tag(dealer_count)
+                    dd_possible = self.dealer.double_down_possible(player_cards)
                     if self.COUNT_CARDS:
-                        new_state = f"{player_count_tag}_{playable_ace_p}_{dealer_count_tag}_{self.dealer.deck_count}"
+                        new_state = f"{player_count_tag}_{playable_ace_p}_{dd_possible}_{dealer_count_tag}" \
+                                    f"_{self.dealer.deck_count}"
                     else:
-                        new_state = f"{player_count_tag}_{playable_ace_p}_{dealer_count_tag}"
+                        new_state = f"{player_count_tag}_{playable_ace_p}_{dd_possible}_{dealer_count_tag}"
 
                     if game_over:
-                        q_new_state = [reward, reward]
+                        q_new_state = np.array([reward, reward, reward])
                     elif new_state not in self.q:
-                        q_new_state = [0, 0]
+                        q_new_state = [0, 0, 0]
                         self.q[new_state] = q_new_state
                     else:
                         q_new_state = self.q[new_state]
@@ -467,21 +530,36 @@ class Agent:
                         pass
                 win_list[i] = reward
 
-            wins = [x for x in win_list if x == 1]
-            loose = [x for x in win_list if x == -1]
+            # ----- Calculate performance metrics -----
+            wins = [x for x in win_list if x >= 1]
+            loose = [x for x in win_list if -2 <= x < 0]
             draw = [x for x in win_list if x == 0]
-            r_wins = round((len(wins) / len(win_list)) * 1000) / 10
-            r_draw = round((len(draw) / len(win_list)) * 1000) / 10
-            r_loose = round((len(loose) / len(win_list)) * 1000) / 10
-            r_black_jack = round((num_of_black_jack / len(win_list)) * 1000) / 10
-            num_episodes = len(win_list)
-            win_factor = (len(wins) - len(loose) + 0.5 * num_of_black_jack) / num_episodes
+            black_jack = [x for x in win_list if x == 1.5]
+            dd_win = [x for x in win_list if x == 2]
+            dd_loose = [x for x in win_list if x == -2]
+            num_valid_episodes = len([x for x in win_list if x != 10])
+
+            r_wins = round((len(wins) / num_valid_episodes) * 1000) / 10
+            r_draw = round((len(draw) / num_valid_episodes) * 1000) / 10
+            r_loose = round((len(loose) / num_valid_episodes) * 1000) / 10
+            r_black_jack = round((len(black_jack) / num_valid_episodes) * 1000) / 10
+            r_dd = 0 if not len(dd_win) else round((len(dd_win) / (len(dd_win) + len(dd_loose))) * 1000) / 10
+
+            # Calculate win-factor
+            unique_outcomes = list(set(win_list))
+            win_factor = 0
+            for outcome_value in unique_outcomes:
+                if outcome_value >= -2:
+                    outcome = [x for x in win_list if x == outcome_value]
+                    win_factor += len(outcome) * outcome_value
+            win_factor = win_factor / num_valid_episodes
 
             # Print evaluation outcome
             print("Evaluate algorithm")
-            print("Found %d new states" % unexplored_states)
-            print("Number of wins: %d , %f" % (len(wins), r_wins))
-            print("Number of draw: %d , %f" % (len(draw), r_draw))
-            print("Number of lost games: %d , %f" % (len(loose), r_loose))
-            print("Number of black jacks : %d , %f" % (num_of_black_jack, r_black_jack))
-            print("The win factor is: %f" % win_factor)
+            print(f"Found {unexplored_states} new states")
+            print(f"Number of wins: {len(wins)}, {r_wins}")
+            print(f"Number of draw: {len(draw)} , {r_draw}")
+            print(f"Number of lost games: {len(loose)} , {r_loose}")
+            print(f"Number of black jacks : {len(black_jack)} , {r_black_jack}")
+            print(f"Number of postive/negative double down: {len(dd_win)} / {len(dd_loose)} , {r_dd}")
+            print(f"The win factor is: {win_factor}")

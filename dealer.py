@@ -1,4 +1,5 @@
 import random
+import numpy as np
 
 
 class Dealer:
@@ -114,6 +115,15 @@ class Dealer:
         return len(player_cards) == 2 and 21 in player_count
 
     @staticmethod
+    def double_down_possible(cards):
+        """ Check if double down action is possible. Double down is possible if the number of cards is 2.
+
+        :param cards: (list)
+        :return:
+        """
+        return int(len(cards) == 2)
+
+    @staticmethod
     def construct_count_tag(count: list):
         """ Takes a card count (list) and converts it to a count-tag (str). If multiple card counts are present in the
         count list, the method will return all counts separated with dashes.
@@ -158,31 +168,49 @@ class Dealer:
         """ Will take an action i the current game corresponding to the action value. If the action is 1, the player
         will hit, otherwise the player will stay.
 
+        Possible actions: 0 = Stand
+                          1 = Hit
+                          2 = Double-down
+
         :param action: (int)
         :param player_cards: (list)
         :param dealer_cards: (list)
         :return:
         """
         game_over = False
-        if action == 1:
+        if action == 0:
+            # Stand
+            game_over = True
+            dealer_count, dealer_cards = Dealer.dealer_play(self, dealer_cards)  # play dealer
+            player_count, playable_ace_p = Dealer.card_count(player_cards)       # Receive card-count
+            outcome = Dealer.check_outcome(player_count, dealer_count)           # Calculate outcome
+            reward = outcome
+            if self.has_black_jack(player_cards, player_count):
+                reward = 1
+        elif action == 1:
             # hit
-            player_cards.append(Dealer.draw_card(self))
-            player_count, playable_ace_p = Dealer.card_count(player_cards)
-            if not len(player_count):
+            player_cards.append(Dealer.draw_card(self))                          # Draw cards
+            player_count, playable_ace_p = Dealer.card_count(player_cards)       # Receive card-count
+            if not len(player_count):                                            # Player got fat
                 reward = -1
                 game_over = True
             else:
                 reward = 0
             dealer_count, dealer_ace = Dealer.card_count(dealer_cards)
-        else:
-            # Stand
+        elif action == 2:
+            # Double down
             game_over = True
-            dealer_count, dealer_cards = Dealer.dealer_play(self, dealer_cards)
-            player_count, playable_ace_p = Dealer.card_count(player_cards)
-            outcome = Dealer.check_outcome(player_count, dealer_count)  # Calculate outcome
-            reward = outcome
-            if self.has_black_jack(player_cards, player_count):
-                reward = 1
+            if self.double_down_possible(player_cards):
+                player_cards.append(Dealer.draw_card(self))                          # Draw card
+                player_count, playable_ace_p = Dealer.card_count(player_cards)       # Receive card-count
+                dealer_count, dealer_cards = Dealer.dealer_play(self, dealer_cards)  # Play dealer
+                outcome = Dealer.check_outcome(player_count, dealer_count)           # Calculate outcome
+                reward = 2 * outcome
+            else:
+                # Action not allowed
+                reward = -10
+                player_count, playable_ace_p = Dealer.card_count(player_cards)
+                dealer_count, _ = Dealer.card_count(dealer_cards)
 
         return reward, player_cards, player_count, dealer_cards, dealer_count, playable_ace_p, game_over
 
