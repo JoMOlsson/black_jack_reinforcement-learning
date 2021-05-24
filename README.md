@@ -9,7 +9,7 @@ The animation above shows the resulting Q-surface post the training session for 
 ![rendered_network](/assets/q_surface_training.gif)
 
 
-##Possible actions
+# Possible actions
 - Hit
 - Stay
 - Double-down
