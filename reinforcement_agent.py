@@ -84,7 +84,10 @@ class Agent:
                         dc = state[delim_index[i - 1] + 1:delim]
                     if '-' in dc:
                         dc = dc.split('-')[-1]
-                    dealer_count.append(int(dc))
+                    try:
+                        dealer_count.append(int(dc))
+                    except:
+                        dealer_count.append(np.nan)
                 else:
                     deck_count.append(int(state[delim_index[i - 1] + 1:len(state)]))
         # Adding state vectors
@@ -235,7 +238,7 @@ class Agent:
                 win_loss_ratio_list.append(win_loss_ratio)
                 self.visualize_progress(win_loss_ratio, win_loss_ratio_list, i_episode, azim)
                 azim += 1
-
+        self.visualize_action_surface(self)
         # ---- Save q-table ----
         with open('Q.json', 'w') as outfile:
             json.dump(q, outfile)
@@ -261,7 +264,7 @@ class Agent:
     def visualize_action_surface(self, rotation=True):
         # TODO: Add visualization for not count cards
         # TODO: Refactor
-        show_actions = False  # Show either actions or w-values
+        show_actions = False  # Show either actions or Q-values
         azim = 0
 
         state_vectors = self.extract_state_vectors(self.q)
