@@ -1,5 +1,6 @@
 import random
 import numpy as np
+import copy
 
 
 class Dealer:
@@ -11,6 +12,7 @@ class Dealer:
         self.stack = Dealer.shuffle(self)
         self.minimum_card_limit = 52
         self.deck_count = 0
+        self.active_games = []
 
     def get_new_stack(self):
         """ Will return a stack of cards according to the number of decks specified in the self.number_of_decks
@@ -92,6 +94,9 @@ class Dealer:
         player_count, playable_ace_p = Dealer.card_count(player_cards)
         dealer_count, playable_ace_d = Dealer.card_count(dealer_cards)
 
+        game = {'player_cards': player_cards, 'player_count': player_count, 'dealer_cards': dealer_cards,
+                'dealer_count': dealer_count, 'playable_ace_p': playable_ace_p}
+        self.active_games.append(game)
         return player_cards, player_count, dealer_cards, dealer_count, playable_ace_p
 
     def dealer_play(self, dealer_cards: list):
@@ -128,6 +133,15 @@ class Dealer:
         :return:
         """
         return int(len(cards) == 2)
+
+    @staticmethod
+    def split_possible(cards):
+        """ Check if split action is possible. Split is possible if the number of player cards is 2 and they are equal
+
+        :param cards: (list)
+        :return:
+        """
+        return int(len(cards) == 2 and len(set(cards)) == 1)
 
     @staticmethod
     def construct_count_tag(count: list):
@@ -170,17 +184,19 @@ class Dealer:
             outcome = 0
         return outcome
 
-    def take_action(self, action, player_cards, dealer_cards):
+    def take_action(self, action, player_cards, dealer_cards, state=''):
         """ Will take an action i the current game corresponding to the action value. If the action is 1, the player
         will hit, otherwise the player will stay.
 
         Possible actions: 0 = Stand
                           1 = Hit
                           2 = Double-down
+                          3 = Split
 
         :param action: (int)
         :param player_cards: (list)
         :param dealer_cards: (list)
+        :param state: (str)
         :return:
         """
         game_over = False
@@ -192,7 +208,7 @@ class Dealer:
             outcome = Dealer.check_outcome(player_count, dealer_count)           # Calculate outcome
             reward = outcome
             if self.has_black_jack(player_cards, player_count):
-                reward = 1
+                reward = 1.5
         elif action == 1:
             # ---- Hit ----
             player_cards.append(Dealer.draw_card(self))                          # Draw cards
@@ -216,6 +232,42 @@ class Dealer:
                 player_count, playable_ace_p = Dealer.card_count(player_cards)       # Receive card-count
                 dealer_count, _ = Dealer.card_count(dealer_cards)
             game_over = True
+        elif action == 3:
+            # ---- Split ----
+            if self.split_possible(player_cards):
+                player_cards.pop(0)
+                dealer_count, _ = Dealer.card_count(dealer_cards)
+
+                player_cards_next_game = copy.deepcopy(player_cards)
+                dealer_cards_next_game = copy.deepcopy(dealer_cards)
+                dealer_count_next_game = copy.deepcopy(dealer_count)
+
+                player_cards.append(Dealer.draw_card(self))
+                player_cards_next_game.append(Dealer.draw_card(self))
+                player_count, playable_ace_p = Dealer.card_count(player_cards)
+                player_count_next_game, playable_ace_p_next_game = Dealer.card_count(player_cards_next_game)
+
+                if self.has_black_jack(player_cards_next_game, player_count_next_game):
+                    reward_next_game = 1.5
+                    game_over = True
+                else:
+                    reward_next_game = 0
+                    game_over = False
+                # reward_new = 1.5 if self.has_black_jack(player_cards_next_game, player_count_next_game) else 0
+                game = {'player_cards': player_cards_next_game, 'player_count': player_count_next_game,
+                        'dealer_cards': dealer_cards_next_game, 'dealer_count': dealer_count_next_game,
+                        'playable_ace_p': playable_ace_p_next_game, 'state': state, 'action': action,
+                        'reward': reward_next_game, 'game_over': game_over}
+                self.active_games.append(game)
+                reward = 1.5 if self.has_black_jack(player_cards, player_count) else 0
+            else:
+                reward = -10  # Action not allowed
+                player_count, playable_ace_p = Dealer.card_count(player_cards)  # Receive card-count
+                dealer_count, _ = Dealer.card_count(dealer_cards)
+                game_over = True
+        game = {'player_cards': player_cards, 'player_count': player_count, 'dealer_cards': dealer_cards,
+                'dealer_count': dealer_count, 'playable_ace_p': playable_ace_p}
+        self.active_games[0] = game
         return reward, player_cards, player_count, dealer_cards, dealer_count, playable_ace_p, game_over
 
     def play_manual(self, num_of_games: int = 1):

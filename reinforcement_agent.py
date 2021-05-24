@@ -1,7 +1,6 @@
 import numpy as np
 import random
 import matplotlib.pyplot as plt
-import math
 import re
 import json
 import os
@@ -51,6 +50,7 @@ class Agent:
         player_count = []  # List storing player counts
         playable_ace = []  # List storing usable ave
         dd_possible = []   # Double down possible
+        split_possible = []
         dealer_count = []  # Dealer count
         deck_count = []    # Deck count
         action = []        # Storage for actions
@@ -76,7 +76,9 @@ class Agent:
                 elif i == 2:
                     dd_possible.append(int(state[delim_index[i - 1] + 1:delim]))
                 elif i == 3:
-                    if num_of_vars == 4:
+                    split_possible.append(int(state[delim_index[i - 1] + 1:delim]))
+                elif i == 4:
+                    if num_of_vars == 5:
                         dc = state[delim_index[i - 1] + 1:len(state)]
                     else:
                         dc = state[delim_index[i - 1] + 1:delim]
@@ -92,6 +94,7 @@ class Agent:
         state_vectors['action'] = action
         state_vectors['max_q_val'] = max_q_val
         state_vectors['dd_possible'] = dd_possible
+        state_vectors['split_possible'] = split_possible
         if deck_count:
             state_vectors['deck_count'] = deck_count
         return state_vectors
@@ -101,11 +104,22 @@ class Agent:
         player_count_tag = self.dealer.construct_count_tag(player_count)
         dealer_count_tag = self.dealer.construct_count_tag(dealer_count)
         dd_possible = self.dealer.double_down_possible(player_cards)
+        split_possible = self.dealer.split_possible(player_cards)
         if self.COUNT_CARDS:
-            state = f"{player_count_tag}_{playable_ace_p}_{dd_possible}_{dealer_count_tag}_{self.dealer.deck_count}"
+            state = f"{player_count_tag}_{playable_ace_p}_{dd_possible}_{split_possible}_{dealer_count_tag}" \
+                    f"_{self.dealer.deck_count}"
         else:
-            state = f"{player_count_tag}_{playable_ace_p}_{dd_possible}_{dealer_count_tag}"
+            state = f"{player_count_tag}_{playable_ace_p}_{dd_possible}_{split_possible}_{dealer_count_tag}"
         return state
+
+    def get_state_variables(self):
+        game = self.dealer.active_games[0]
+        player_cards = game['player_cards']
+        player_count = game['player_count']
+        dealer_cards = game['dealer_cards']
+        dealer_count = game['dealer_count']
+        playable_ace_p = game['playable_ace_p']
+        return player_cards, player_count, dealer_cards, dealer_count, playable_ace_p
 
     def train_agent(self, num_of_episodes=1000000, azim_start=0, extract_performance_every=np.inf):
         """
@@ -120,7 +134,6 @@ class Agent:
         :param extract_performance_every:
         :return:
         """
-        # TODO: Clean Code
         win_loss_ratio_list = []                     # List holding the win/loss ratio values
         azim = azim_start                            # Azim angle start, used for performance visualisation
         q = self.q                                   # Get Q-table
@@ -129,14 +142,14 @@ class Agent:
         print_tick_lim = 50000                       # Number of episodes between status print-out
         n = 0                                        # Print-out tick count
         print_tick = 0                               # Episode tick count
-        outcome_list = [0] * num_of_episodes         # List holding episode outcomes
+        outcome_list = []                            # List holding episode outcomes
         performance_count = 0
         for i_episode in range(0, num_of_episodes):
             n += 1
             performance_count += 1
             if n >= print_tick_lim:
-                print(f"Executed another {print_tick_lim} episodes, total episode count {print_tick}")
                 print_tick += n
+                print(f"Executed another {print_tick_lim} episodes, total episode count {print_tick}")
                 n = 0
             # Start new game
             player_cards, player_count, dealer_cards, dealer_count, playable_ace_p = self.dealer.new_game()
@@ -144,7 +157,7 @@ class Agent:
 
             # Add state to Q-table
             if state not in q:
-                q[state] = [0, 0, 0]
+                q[state] = [0, 0, 0, 0]
             q_vals = q[state]
             action = np.argmax(q_vals)
 
@@ -163,32 +176,56 @@ class Agent:
             else:
                 game_over = False
 
+            run_game = not game_over
             reward = 0
-            while not game_over:
-                # Take action
-                reward, player_cards, player_count, dealer_cards, dealer_count, playable_ace_p, game_over = \
-                    self.dealer.take_action(action, player_cards, dealer_cards)
-                new_state = self.extract_state_string(player_count, dealer_count, player_cards, playable_ace_p)
+            while len(self.dealer.active_games) and run_game:
+                player_cards, player_count, dealer_cards, dealer_count, playable_ace_p = self.get_state_variables()
+                if 'reward' in self.dealer.active_games[0]:
+                    # Update Q-values
+                    state = self.dealer.active_games[0]['state']
+                    reward = self.dealer.active_games[0]['reward']
+                    action = self.dealer.active_games[0]['action']
+                    game_over = self.dealer.active_games[0]['game_over']
+                    new_state = self.extract_state_string(player_count, dealer_count, player_cards, playable_ace_p)
 
-                if game_over:
-                    q_new_state = [reward, reward, reward]
-                else:
                     if new_state not in self.q:
-                        q_new_state = [0, 0, 0]
+                        q_new_state = [0, 0, 0, 0]
                         q[new_state] = q_new_state
                     else:
                         q_new_state = q[new_state]
-
-                q[state][action] += self.alpha * (reward + self.discount * max(q_new_state) - q[state][action])
-
-                # Move to new state
-                if not game_over:
+                    q[state][action] += self.alpha * (reward + self.discount * max(q_new_state) - q[state][action])
                     state = new_state
                     q_vals = np.array(q_new_state)
                     action = np.argmax(q_vals)
                     if i_episode < explore_stop:
                         action = self.change_action(action, self.exploration_prob, q_vals)
-            outcome_list[i_episode] = reward
+
+                while not game_over:
+                    # Take action
+                    reward, player_cards, player_count, dealer_cards, dealer_count, playable_ace_p, game_over = \
+                        self.dealer.take_action(action, player_cards, dealer_cards, state=state)
+                    new_state = self.extract_state_string(player_count, dealer_count, player_cards, playable_ace_p)
+
+                    if game_over:
+                        q_new_state = [reward, reward, reward, reward]
+                    else:
+                        if new_state not in self.q:
+                            q_new_state = [0, 0, 0, 0]
+                            q[new_state] = q_new_state
+                        else:
+                            q_new_state = q[new_state]
+
+                    q[state][action] += self.alpha * (reward + self.discount * max(q_new_state) - q[state][action])
+
+                    # Move to new state
+                    if not game_over:
+                        state = new_state
+                        q_vals = np.array(q_new_state)
+                        action = np.argmax(q_vals)
+                        if i_episode < explore_stop:
+                            action = self.change_action(action, self.exploration_prob, q_vals)
+                self.dealer.active_games.pop(0)
+                outcome_list.append(reward)
 
             # Evaluate performance
             if performance_count > extract_performance_every:
@@ -373,14 +410,14 @@ class Agent:
             plt.close(fig)
 
     def get_performance(self, number_of_episodes=100_000):
-        win_list = [0] * number_of_episodes
+        win_list = []
         for i in range(0, number_of_episodes):
             player_cards, player_count, dealer_cards, dealer_count, playable_ace_p = self.dealer.new_game()
             state = self.extract_state_string(player_count, dealer_count, player_cards, playable_ace_p)
 
             # Add state to Q-table
             if state not in self.q:
-                self.q[state] = [0, 0, 0]
+                self.q[state] = [0, 0, 0, 0]
             q_vals = np.array(self.q[state])
             action = np.argmax(q_vals)
 
@@ -389,25 +426,40 @@ class Agent:
                 reward = 1.5
             else:
                 game_over = False
-            while not game_over:
-                # Take action
-                reward, player_cards, player_count, dealer_cards, dealer_count, playable_ace_p, game_over = \
-                    self.dealer.take_action(action, player_cards, dealer_cards)
-                new_state = self.extract_state_string(player_count, dealer_count, player_cards, playable_ace_p)
+            run_game = not game_over
+            while len(self.dealer.active_games) and run_game:
+                player_cards, player_count, dealer_cards, dealer_count, playable_ace_p = self.get_state_variables()
+                if 'reward' in self.dealer.active_games[0]:
+                    reward = self.dealer.active_games[0]['reward']
+                    game_over = self.dealer.active_games[0]['game_over']
+                    new_state = self.extract_state_string(player_count, dealer_count, player_cards, playable_ace_p)
 
-                if game_over:
-                    q_new_state = [reward, reward, reward]
-                elif new_state not in self.q:
-                    q_new_state = [0, 0, 0]
-                    self.q[new_state] = q_new_state
-                else:
-                    q_new_state = self.q[new_state]
+                    if new_state not in self.q:
+                        q_new_state = [0, 0, 0, 0]
+                        self.q[new_state] = q_new_state
+                    else:
+                        q_new_state = self.q[new_state]
+                    q_vals = np.array(q_new_state)
+                    action = np.argmax(q_vals)
+                while not game_over:
+                    # Take action
+                    reward, player_cards, player_count, dealer_cards, dealer_count, playable_ace_p, game_over = \
+                        self.dealer.take_action(action, player_cards, dealer_cards)
+                    new_state = self.extract_state_string(player_count, dealer_count, player_cards, playable_ace_p)
 
-                # Move to new state
-                q_vals = np.array(q_new_state)
-                action = np.argmax(q_vals)
+                    if game_over:
+                        q_new_state = [reward, reward, reward, reward]
+                    elif new_state not in self.q:
+                        q_new_state = [0, 0, 0, 0]
+                        self.q[new_state] = q_new_state
+                    else:
+                        q_new_state = self.q[new_state]
 
-            win_list[i] = reward
+                    # Move to new state
+                    q_vals = np.array(q_new_state)
+                    action = np.argmax(q_vals)
+                self.dealer.active_games.pop(0)
+                win_list.append(reward)
         # Calculate win-loss ratio
         win_loss = np.where(np.array(win_list) != 0)[0]
         wins = np.where(np.array(win_list)[win_loss] == 1)[0]
@@ -420,7 +472,7 @@ class Agent:
         for iPolicy in range(0, len(policy)):
             num_of_black_jack = 0
             num_of_eval_episodes = 100000
-            win_list = [0] * num_of_eval_episodes
+            win_list = []
             unexplored_states = 0
 
             print("===== Running with policy: " + policy[iPolicy] + " =====")
@@ -434,7 +486,7 @@ class Agent:
                 # Add state to Q-table
                 if state not in self.q:
                     unexplored_states += 1
-                    self.q[state] = [0, 0, 0]
+                    self.q[state] = [0, 0, 0, 0]
                 q_vals = np.array(self.q[state])
                 action = np.argmax(q_vals)
 
@@ -452,34 +504,51 @@ class Agent:
                     reward = 1.5
                 else:
                     game_over = False
-                while not game_over:
-                    # Take action
-                    reward, player_cards, player_count, dealer_cards, dealer_count, playable_ace_p, game_over = \
-                        self.dealer.take_action(action, player_cards, dealer_cards)
-                    new_state = self.extract_state_string(player_count, dealer_count, player_cards, playable_ace_p)
 
-                    if game_over:
-                        q_new_state = np.array([reward, reward, reward])
-                    elif new_state not in self.q:
-                        q_new_state = [0, 0, 0]
-                        self.q[new_state] = q_new_state
-                    else:
-                        q_new_state = self.q[new_state]
+                run_game = not game_over
+                while len(self.dealer.active_games) and run_game:
+                    player_cards, player_count, dealer_cards, dealer_count, playable_ace_p = self.get_state_variables()
+                    if 'reward' in self.dealer.active_games[0]:
+                        reward = self.dealer.active_games[0]['reward']
+                        game_over = self.dealer.active_games[0]['game_over']
+                        new_state = self.extract_state_string(player_count, dealer_count, player_cards, playable_ace_p)
 
-                    # Move to new state
-                    q_vals = np.array(q_new_state)
-                    action = np.argmax(q_vals)
-
-                    if policy[iPolicy] == 'strict':
-                        if len(player_count) and max(player_count) < 18:
-                            action = 1
+                        if new_state not in self.q:
+                            q_new_state = [0, 0, 0, 0]
+                            self.q[new_state] = q_new_state
                         else:
-                            action = 0
-                    elif policy[iPolicy] == 'random':
-                        action = random.randint(0, 1)
-                    else:
-                        pass
-                win_list[i] = reward
+                            q_new_state = self.q[new_state]
+                        q_vals = np.array(q_new_state)
+                        action = np.argmax(q_vals)
+
+                    while not game_over:
+                        # Take action
+                        reward, player_cards, player_count, dealer_cards, dealer_count, playable_ace_p, game_over = \
+                            self.dealer.take_action(action, player_cards, dealer_cards)
+                        new_state = self.extract_state_string(player_count, dealer_count, player_cards, playable_ace_p)
+
+                        if game_over:
+                            q_new_state = [reward, reward, reward, reward]
+                        elif new_state not in self.q:
+                            q_new_state = [0, 0, 0, 0]
+                            self.q[new_state] = q_new_state
+                        else:
+                            q_new_state = self.q[new_state]
+
+                        # Move to new state
+                        q_vals = np.array(q_new_state)
+                        action = np.argmax(q_vals)
+
+                        if policy[iPolicy] == 'strict':
+                            if len(player_count) and max(player_count) < 18:
+                                action = 1
+                            else:
+                                action = 0
+                        elif policy[iPolicy] == 'random':
+                            action = random.randint(0, 1)
+                    self.dealer.active_games.pop(0)
+                    win_list.append(reward)
+                out_loop_count = 0
 
             # ----- Calculate performance metrics -----
             wins = [x for x in win_list if x >= 1]
@@ -499,10 +568,13 @@ class Agent:
             # Calculate win-factor
             unique_outcomes = list(set(win_list))
             win_factor = 0
+            bet_value = 5  # dollars
+            total_gain = 0
             for outcome_value in unique_outcomes:
                 if outcome_value >= -2:
                     outcome = [x for x in win_list if x == outcome_value]
                     win_factor += len(outcome) * outcome_value
+                    total_gain += len(outcome) * bet_value * outcome_value
             win_factor = win_factor / num_valid_episodes
 
             # Print evaluation outcome
@@ -514,3 +586,9 @@ class Agent:
             print(f"Number of black jacks : {len(black_jack)} , {r_black_jack}")
             print(f"Number of postive / negative double down: {len(dd_win)} / {len(dd_loose)} , {r_dd}")
             print(f"The win factor is: {win_factor}")
+            if total_gain < 0:
+                print(f"You would have lost {total_gain} dollar, assuming you would have betted {bet_value} dollars"
+                      f" a game, for {num_valid_episodes} games")
+            else:
+                print(f"You would have won {total_gain} dollar, assuming you would have betted {bet_value} dollar"
+                      f" a game, for {num_valid_episodes} games")
