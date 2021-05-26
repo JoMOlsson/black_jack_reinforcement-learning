@@ -277,48 +277,66 @@ class Dealer:
         :param num_of_games: (int)
         :return:
         """
-        # TODO: Support additional actions
+        def get_valid_action():
+            user_action = input("Choose a valid action [stay, hit, double-down, split]")
+            valid_action = False
+            user_sat = False
+            a = 0
+            while not valid_action:
+                if user_action == "stay":
+                    a = 0
+                    user_sat = True
+                    valid_action = True
+                elif user_action == "hit":
+                    a = 1
+                    valid_action = True
+                elif user_action == "double-down":
+                    a = 2
+                    valid_action = True
+                elif user_action == "split":
+                    a = 3
+                    valid_action = True
+                else:
+                    print("Action not valid! Choose one of these four [stay, hit, double-down, split]: ")
+            return a, user_sat
+
         for i in range(0, num_of_games):
             print("----- NEW GAME -----")
             player_cards, player_count, dealer_cards, dealer_count, playable_ace_p = Dealer.new_game(self)
 
-            user_satisfied = False
             if self.has_black_jack(player_cards, player_count):
                 print("You got black-jack")
                 user_satisfied = True
             else:
                 print(f"Deck count is {self.deck_count}")
-                print(f"Your hand is {player_count}")
-                print(f"Dealer hand is {dealer_count}")
-                action = input("Do you want to draw a card or stay?")
-                if not action == "draw":
-                    user_satisfied = True
-
+                print(f"Your hand is {player_cards}, count is {player_count}")
+                print(f"Dealer hand is {dealer_cards}, dealer count is {dealer_count}")
+                action, user_satisfied = get_valid_action()
             user_lost = False
             while not user_satisfied and not user_lost:
-                player_cards.append(Dealer.draw_card(self))
-                player_count, playable_ace = Dealer.card_count(player_cards)
-                print(f"Your hand is {player_count}")
+                reward, player_cards, player_count, dealer_cards, dealer_count, playable_ace_p, game_over = \
+                    self.take_action(action, player_cards, dealer_cards)
+
                 print(f"Deck count is {self.deck_count}")
+                print(f"Your hand is {player_cards}, count is {player_count}")
+                print(f"Dealer hand is {dealer_cards}, dealer count is {dealer_count}")
                 if not len(player_count):
-                    print("You lost!")
+                    print("Sorry, You lost!")
                     user_lost = True
                 elif 21 in player_count:
                     print("congrats, you got 21!")
                     user_satisfied = True
                 else:
-                    action = input("Do you want to draw a card or stay?")
-                    if action == "stay":
-                        user_satisfied = True
+                    action, user_satisfied = get_valid_action()
 
             if not user_lost:
                 dealer_count, dealer_cards = Dealer.dealer_play(self, dealer_cards)
                 outcome = Dealer.check_outcome(player_count, dealer_count)
 
                 print(f"Dealer count is {dealer_count}")
-                if outcome == 1:
+                if outcome >= 1:
                     print("Congratulation, you win! ")
-                elif outcome == -1:
+                elif outcome <= -1:
                     print("You lost")
                 else:
                     print("It's a draw!")
