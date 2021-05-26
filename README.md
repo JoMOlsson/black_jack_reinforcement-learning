@@ -10,8 +10,8 @@ The animation above shows the resulting Q-surface post the training session for 
 
 
 # Possible actions
-- Hit
-- Stay
-- Double-down
-- Split  
+- **Hit** - Draw another card from the stack
+- **Stay** - Stay and let dealer play
+- **Double-down** - Double the bet and take one, and only one additional card. If the game is a win, the reward will be double. If the game results in a loss, the loss will be double. This action is only allowed if the player has not taken any previous actions.
+- **Split**  - Split the hand in two and create one new game. The action is only allowed if no previous actions are made and the two cards on hand are equal.
 
