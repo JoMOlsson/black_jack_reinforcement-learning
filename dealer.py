@@ -1,6 +1,8 @@
 import random
 import numpy as np
 import copy
+import os
+import json
 
 
 class Dealer:
@@ -13,6 +15,7 @@ class Dealer:
         self.minimum_card_limit = 52
         self.deck_count = 0
         self.active_games = []
+        self.q = {}
 
     def get_new_stack(self):
         """ Will return a stack of cards according to the number of decks specified in the self.number_of_decks
@@ -271,13 +274,47 @@ class Dealer:
         self.active_games[0] = game
         return reward, player_cards, player_count, dealer_cards, dealer_count, playable_ace_p, game_over
 
-    def play_manual(self, num_of_games: int = 1):
+    def extract_state_string(self, player_count, dealer_count, player_cards, playable_ace_p):
+        count_cards = True
+        player_count_tag = self.construct_count_tag(player_count)
+        dealer_count_tag = self.construct_count_tag(dealer_count)
+        dd_possible = self.double_down_possible(player_cards)
+        split_possible = self.split_possible(player_cards)
+        if count_cards:
+            state = f"{player_count_tag}_{playable_ace_p}_{dd_possible}_{split_possible}_{dealer_count_tag}" \
+                    f"_{self.deck_count}"
+        else:
+            state = f"{player_count_tag}_{playable_ace_p}_{dd_possible}_{split_possible}_{dealer_count_tag}"
+        return state
+
+    def play_manual(self, num_of_games: int = 1, get_help=False):
         """ Plays a number of interactive black-jack games. The number of games is decided by the input variable
         num_of_games.
 
         :param num_of_games: (int)
+        :param get_help: (Boolean)
         :return:
         """
+        # Try to load Q-value
+        if get_help:
+            dir_path = os.path.dirname(os.path.realpath(__file__))
+            with open(os.path.join(dir_path, 'Q/Q.json')) as f:
+                self.q = json.load(f)
+                # TODO: FIX FIGURING OUT COUNT-CARD
+
+        def get_help(p_cards, p_count, d_count, help_on):
+            if help_on:
+                play_ace_p = 1 if 1 in p_cards else 0
+                state = self.extract_state_string(p_count, d_count, p_cards, play_ace_p)
+                if state in self.q:
+                    q_vals = self.q[state]
+                    q_vals = np.array(q_vals)
+                    a = np.argmax(q_vals)
+                    str_action = 'stay' if a == 0 else 'hit' if a == 1 else 'double-down' if a == 3 else 'split'
+                    print('Reinforcement-Agent: "I would ' + str_action + '"')
+                else:
+                    print('Reinforcement-Agent: "Hmm, I do not know what to do??"')
+
         def get_valid_action():
             user_action = input("Choose a valid action [stay, hit, double-down, split]")
             valid_action = False
@@ -321,12 +358,13 @@ class Dealer:
                 user_satisfied = True
             else:
                 show_state(self.deck_count, player_cards, player_count, dealer_cards, dealer_count)
+                get_help(player_cards, player_count, dealer_count, get_help)
                 action, user_satisfied = get_valid_action()
             user_lost = False
             while not user_satisfied and not user_lost:
                 reward, player_cards, player_count, dealer_cards, dealer_count, playable_ace_p, game_over = \
                     self.take_action(action, player_cards, dealer_cards)
-                if reward == -10:
+                if reward < -2:
                     print("Action not valid!")
 
                 show_state(self.deck_count, player_cards, player_count, dealer_cards, dealer_count)
@@ -337,6 +375,7 @@ class Dealer:
                     print("congrats, you got 21!")
                     user_satisfied = True
                 else:
+                    get_help(player_cards, player_count, dealer_count, get_help)
                     action, user_satisfied = get_valid_action()
 
             if not user_lost:
