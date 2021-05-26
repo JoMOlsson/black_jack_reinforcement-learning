@@ -141,7 +141,8 @@ class Dealer:
         :param cards: (list)
         :return:
         """
-        return int(len(cards) == 2 and len(set(cards)) == 1)
+        card_temp = [card if card not in [10, 11, 12, 13] else 10 for card in cards]
+        return int(len(card_temp) == 2 and len(set(card_temp)) == 1)
 
     @staticmethod
     def construct_count_tag(count: list):
@@ -298,7 +299,18 @@ class Dealer:
                     valid_action = True
                 else:
                     print("Action not valid! Choose one of these four [stay, hit, double-down, split]: ")
+                    user_action = input("Choose a valid action [stay, hit, double-down, split]")
             return a, user_sat
+
+        def show_state(deck_count, p_cards, p_count, d_cards, d_count):
+            str_p_cards = [str(card) if card not in [1, 11, 12, 13] else 'ace' if card == 1 else 'jack' if card == 11
+                           else 'queen' if card == 12 else 'king' for card in p_cards]
+            str_d_cards = [str(card) if card not in [1, 11, 12, 13] else 'ace' if card == 1 else 'jack' if card == 11
+                           else 'queen' if card == 12 else 'king' for card in d_cards]
+
+            print(f"Deck count is {deck_count}")
+            print(f"Your hand is {str_p_cards}, count is {p_count}")
+            print(f"Dealer hand is {str_d_cards}, dealer count is {d_count}")
 
         for i in range(0, num_of_games):
             print("----- NEW GAME -----")
@@ -308,18 +320,16 @@ class Dealer:
                 print("You got black-jack")
                 user_satisfied = True
             else:
-                print(f"Deck count is {self.deck_count}")
-                print(f"Your hand is {player_cards}, count is {player_count}")
-                print(f"Dealer hand is {dealer_cards}, dealer count is {dealer_count}")
+                show_state(self.deck_count, player_cards, player_count, dealer_cards, dealer_count)
                 action, user_satisfied = get_valid_action()
             user_lost = False
             while not user_satisfied and not user_lost:
                 reward, player_cards, player_count, dealer_cards, dealer_count, playable_ace_p, game_over = \
                     self.take_action(action, player_cards, dealer_cards)
+                if reward == -10:
+                    print("Action not valid!")
 
-                print(f"Deck count is {self.deck_count}")
-                print(f"Your hand is {player_cards}, count is {player_count}")
-                print(f"Dealer hand is {dealer_cards}, dealer count is {dealer_count}")
+                show_state(self.deck_count, player_cards, player_count, dealer_cards, dealer_count)
                 if not len(player_count):
                     print("Sorry, You lost!")
                     user_lost = True
@@ -332,7 +342,6 @@ class Dealer:
             if not user_lost:
                 dealer_count, dealer_cards = Dealer.dealer_play(self, dealer_cards)
                 outcome = Dealer.check_outcome(player_count, dealer_count)
-
                 print(f"Dealer count is {dealer_count}")
                 if outcome >= 1:
                     print("Congratulation, you win! ")
